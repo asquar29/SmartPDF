@@ -3,16 +3,15 @@ import re
 import json
 import pytesseract
 import pdfplumber
-from collections import defaultdict
 from pdf2image import convert_from_path
-import argparse
+from collections import defaultdict
 
-# ---------------- Configuration Defaults ----------------
-DEFAULT_LINE_TOLERANCE = 2
-DEFAULT_OCR_FONT_SIZE = 10
-
-# Optional: Set tesseract path if needed
-# pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# ---------------- Settings ----------------
+input_folder = "input"
+output_folder = "output"
+poppler_path = r"C:\Users\anike\Downloads\Release-24.08.0-0\poppler-24.08.0\Library\bin"
+line_tolerance = 2
+ocr_default_font_size = 10
 
 # ---------------- Helper Functions ----------------
 def is_heading_candidate(text):
@@ -46,8 +45,8 @@ def should_skip(text, is_toc=False):
     return False
 
 def clean_text(text):
-    text = re.sub(r'\.{2,}', '', text)
-    text = re.sub(r'\s+\d+$', '', text)
+    text = re.sub(r'\.{2,}', '', text)  # remove dotted leaders
+    text = re.sub(r'\s+\d+$', '', text)  # remove trailing page numbers
     return text.strip()
 
 def is_toc_page(lines):
@@ -63,7 +62,7 @@ def inside_table(x0, y0, x1, y1, tables):
     return False
 
 # ---------------- Main Extraction Function ----------------
-def extract_outline(pdf_path, poppler_path, output_path, line_tolerance=2, ocr_default_font_size=10):
+def extract_outline(pdf_path):
     images = convert_from_path(pdf_path, poppler_path=poppler_path)
 
     all_lines = []
@@ -105,7 +104,6 @@ def extract_outline(pdf_path, poppler_path, output_path, line_tolerance=2, ocr_d
                         "page": page_number,
                         "top": top
                     })
-
             else:  # OCR fallback
                 ocr_text = pytesseract.image_to_string(images[page_number - 1])
                 extracted_lines = [line.strip() for line in ocr_text.splitlines() if line.strip()]
@@ -153,49 +151,24 @@ def extract_outline(pdf_path, poppler_path, output_path, line_tolerance=2, ocr_d
             })
             seen.add(text)
 
-    result = {
+    return {
         "title": " ".join(title_parts).strip(),
         "outline": outline
     }
 
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2)
+# ---------------- Batch Processor ----------------
+def process_all_pdfs():
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
 
-# ---------------- Batch PDF Runner ----------------
-def process_all_pdfs(input_dir, output_dir, poppler_path, line_tolerance, ocr_default_font_size):
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    for file in os.listdir(input_folder):
+        if file.lower().endswith(".pdf"):
+            pdf_path = os.path.join(input_folder, file)
+            result = extract_outline(pdf_path)
+            output_file = os.path.join(output_folder, os.path.splitext(file)[0] + ".json")
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(result, f, indent=2)
 
-    for filename in os.listdir(input_dir):
-        if filename.lower().endswith(".pdf"):
-            input_pdf = os.path.join(input_dir, filename)
-            output_json = os.path.join(output_dir, f"{os.path.splitext(filename)[0]}.json")
-            try:
-                extract_outline(
-                    pdf_path=input_pdf,
-                    poppler_path=poppler_path,
-                    output_path=output_json,
-                    line_tolerance=line_tolerance,
-                    ocr_default_font_size=ocr_default_font_size
-                )
-            except Exception as e:
-                print(f"Failed to process {filename}: {e}")
-
-# ---------------- CLI Support ----------------
+# ---------------- Run ----------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Extract outlines from all PDFs in a folder")
-    parser.add_argument("--input", required=True, help="Input folder containing PDFs")
-    parser.add_argument("--output", required=True, help="Output folder to save JSONs")
-    parser.add_argument("--poppler", required=True, help="Path to poppler binary directory")
-    parser.add_argument("--tolerance", type=int, default=DEFAULT_LINE_TOLERANCE, help="Line tolerance value")
-    parser.add_argument("--ocr_font", type=int, default=DEFAULT_OCR_FONT_SIZE, help="Default OCR font size")
-
-    args = parser.parse_args()
-
-    process_all_pdfs(
-        input_dir=args.input,
-        output_dir=args.output,
-        poppler_path=args.poppler,
-        line_tolerance=args.tolerance,
-        ocr_default_font_size=args.ocr_font
-    )
+    process_all_pdfs()
