@@ -1,5 +1,5 @@
-import re
 import os
+import re
 import json
 import pytesseract
 import pdfplumber
@@ -11,7 +11,7 @@ import argparse
 DEFAULT_LINE_TOLERANCE = 2
 DEFAULT_OCR_FONT_SIZE = 10
 
-# If needed, set path to Tesseract executable:
+# Optional: Set tesseract path if needed
 # pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 # ---------------- Helper Functions ----------------
@@ -64,11 +64,6 @@ def inside_table(x0, y0, x1, y1, tables):
 
 # ---------------- Main Extraction Function ----------------
 def extract_outline(pdf_path, poppler_path, output_path, line_tolerance=2, ocr_default_font_size=10):
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-    if not os.path.exists(poppler_path):
-        raise FileNotFoundError(f"Poppler path not found: {poppler_path}")
-
     images = convert_from_path(pdf_path, poppler_path=poppler_path)
 
     all_lines = []
@@ -166,23 +161,41 @@ def extract_outline(pdf_path, poppler_path, output_path, line_tolerance=2, ocr_d
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
 
+# ---------------- Batch PDF Runner ----------------
+def process_all_pdfs(input_dir, output_dir, poppler_path, line_tolerance, ocr_default_font_size):
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    for filename in os.listdir(input_dir):
+        if filename.lower().endswith(".pdf"):
+            input_pdf = os.path.join(input_dir, filename)
+            output_json = os.path.join(output_dir, f"{os.path.splitext(filename)[0]}.json")
+            try:
+                extract_outline(
+                    pdf_path=input_pdf,
+                    poppler_path=poppler_path,
+                    output_path=output_json,
+                    line_tolerance=line_tolerance,
+                    ocr_default_font_size=ocr_default_font_size
+                )
+            except Exception as e:
+                print(f"Failed to process {filename}: {e}")
+
 # ---------------- CLI Support ----------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Extract document outline from PDF")
-    parser.add_argument("--pdf", required=True, help="Path to input PDF file")
+    parser = argparse.ArgumentParser(description="Extract outlines from all PDFs in a folder")
+    parser.add_argument("--input", required=True, help="Input folder containing PDFs")
+    parser.add_argument("--output", required=True, help="Output folder to save JSONs")
     parser.add_argument("--poppler", required=True, help="Path to poppler binary directory")
-    parser.add_argument("--output", default="output.json", help="Path to save output JSON")
     parser.add_argument("--tolerance", type=int, default=DEFAULT_LINE_TOLERANCE, help="Line tolerance value")
     parser.add_argument("--ocr_font", type=int, default=DEFAULT_OCR_FONT_SIZE, help="Default OCR font size")
+
     args = parser.parse_args()
 
-    try:
-        extract_outline(
-            pdf_path=args.pdf,
-            poppler_path=args.poppler,
-            output_path=args.output,
-            line_tolerance=args.tolerance,
-            ocr_default_font_size=args.ocr_font
-        )
-    except Exception as e:
-        print(f"Error: {e}")
+    process_all_pdfs(
+        input_dir=args.input,
+        output_dir=args.output,
+        poppler_path=args.poppler,
+        line_tolerance=args.tolerance,
+        ocr_default_font_size=args.ocr_font
+    )
